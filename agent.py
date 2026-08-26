@@ -9,7 +9,7 @@ def run_agent_steps(client, job_description, resume_text):
     results = {}
     
     # Step 1: Extract key requirements and skills from the job description.
-    yield "Step 1: Extracting job requirements...", results
+    yield "🔍 Step 1/4: Analyzing job description for key requirements...", results
     step1_prompt = f"""
     You are an expert technical recruiter and talent acquisition specialist.
     Analyze the following job description and extract the key requirements.
@@ -24,14 +24,17 @@ def run_agent_steps(client, job_description, resume_text):
 
     Provide a well-structured summary using clear markdown headings and bullet points.
     """
-    response1 = client.models.generate_content(
-        model="gemini-3.5-flash",
-        contents=step1_prompt,
-    )
-    results["step1"] = response1.text
+    try:
+        response1 = client.models.generate_content(
+            model="gemini-3.5-flash",
+            contents=step1_prompt,
+        )
+        results["step1"] = response1.text
+    except Exception as e:
+        raise RuntimeError("Something went wrong while analyzing. Please try again in a moment.") from e
     
     # Step 2: Compare those requirements against the resume text and identify matches and gaps.
-    yield "Step 2: Comparing with your resume...", results
+    yield "⚖️ Step 2/4: Comparing requirements with your resume to find matches & gaps...", results
     step2_prompt = f"""
     You are an expert career consultant.
     Compare the key job requirements extracted from the job description against the candidate's resume.
@@ -49,14 +52,17 @@ def run_agent_steps(client, job_description, resume_text):
 
     Provide a clear, structured comparison with matched points and gaps.
     """
-    response2 = client.models.generate_content(
-        model="gemini-3.5-flash",
-        contents=step2_prompt,
-    )
-    results["step2"] = response2.text
+    try:
+        response2 = client.models.generate_content(
+            model="gemini-3.5-flash",
+            contents=step2_prompt,
+        )
+        results["step2"] = response2.text
+    except Exception as e:
+        raise RuntimeError("Something went wrong while analyzing. Please try again in a moment.") from e
     
     # Step 3: Generate a tailored cover letter based on the comparison.
-    yield "Step 3: Generating tailored cover letter...", results
+    yield "✉️ Step 3/4: Crafting your tailored professional cover letter...", results
     step3_prompt = f"""
     You are an expert professional writer and career coach.
     Write a highly tailored, compelling professional cover letter for the candidate applying to this job. 
@@ -74,14 +80,17 @@ def run_agent_steps(client, job_description, resume_text):
 
     Ensure the cover letter is written in a professional, engaging tone. Use placeholders like [Candidate Name], [Hiring Manager Name], [Company Name], and [Date] where appropriate.
     """
-    response3 = client.models.generate_content(
-        model="gemini-3.5-flash",
-        contents=step3_prompt,
-    )
-    results["step3"] = response3.text
+    try:
+        response3 = client.models.generate_content(
+            model="gemini-3.5-flash",
+            contents=step3_prompt,
+        )
+        results["step3"] = response3.text
+    except Exception as e:
+        raise RuntimeError("Something went wrong while analyzing. Please try again in a moment.") from e
     
     # Step 4: Suggest specific resume bullet-point edits to better match the job.
-    yield "Step 4: Suggesting bullet-point edits...", results
+    yield "✍️ Step 4/4: Formulating high-impact resume bullet-point edits...", results
     step4_prompt = f"""
     You are an expert resume writer.
     Suggest specific actionable bullet-point edits to the candidate's resume based on the job requirements.
@@ -98,10 +107,13 @@ def run_agent_steps(client, job_description, resume_text):
 
     Provide at least 3 high-impact bullet-point suggestions.
     """
-    response4 = client.models.generate_content(
-        model="gemini-3.5-flash",
-        contents=step4_prompt,
-    )
-    results["step4"] = response4.text
+    try:
+        response4 = client.models.generate_content(
+            model="gemini-3.5-flash",
+            contents=step4_prompt,
+        )
+        results["step4"] = response4.text
+    except Exception as e:
+        raise RuntimeError("Something went wrong while analyzing. Please try again in a moment.") from e
     
     yield "Complete", results

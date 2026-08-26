@@ -14,19 +14,23 @@ client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 st.set_page_config(page_title="AI Resume Analyzer", page_icon="📄", layout="wide")
 st.title("📄 AI Resume Analyzer")
+st.markdown("##### Welcome! This friendly tool uses AI to analyze your resume, highlight your strengths, suggest improvements, and help you tailor your application for your dream job.")
 
 # Create tabs for navigation
 tab1, tab2, tab3 = st.tabs(["🔍 Analyze Resume", "📜 Analysis History", "🤖 Job Application Assistant"])
 
 def extract_text_from_pdf(file):
     """Reads a PDF file and pulls out all the text from every page."""
-    text = ""
-    with pdfplumber.open(file) as pdf:
-        for page in pdf.pages:
-            page_text = page.extract_text()
-            if page_text:
-                text += page_text + "\n"
-    return text
+    try:
+        text = ""
+        with pdfplumber.open(file) as pdf:
+            for page in pdf.pages:
+                page_text = page.extract_text()
+                if page_text:
+                    text += page_text + "\n"
+        return text
+    except Exception:
+        return None
 
 
 def analyze_resume(resume_text):
@@ -56,65 +60,89 @@ def analyze_resume(resume_text):
     {resume_text}
     """
 
-    response = client.models.generate_content(
-        model="gemini-3.5-flash",
-        contents=prompt,
-    )
-    return response.text
+    try:
+        response = client.models.generate_content(
+            model="gemini-3.5-flash",
+            contents=prompt,
+        )
+        return response.text
+    except Exception as e:
+        raise RuntimeError("Something went wrong while analyzing. Please try again in a moment.") from e
 
 
 # Tab 1: Analyze Resume
 with tab1:
-    st.write("Upload your resume (PDF) and get instant AI-powered feedback.")
-    uploaded_file = st.file_uploader("Upload your resume (PDF only)", type=["pdf"])
+    col1, col2 = st.columns([2, 1], gap="large")
+    
+    with col1:
+        st.subheader("📤 Upload Resume")
+        st.write("Upload your resume in PDF format to receive comprehensive, AI-powered feedback.")
+        uploaded_file = st.file_uploader("Upload your resume (PDF only)", type=["pdf"])
+        
+    with col2:
+        st.subheader("💡 Tips for Best Results")
+        st.markdown("""
+        - **Format:** Ensure your resume is in **PDF** format.
+        - **Readable Text:** Avoid scanned, image-only PDFs so our AI can read the text.
+        - **Size Limit:** Keep your file size **under 10MB**.
+        - **Content:** Include clear details about your experience, achievements, and key skills.
+        """)
+        
+    st.divider()
 
     if uploaded_file is not None:
-        file_key = f"analyze_{uploaded_file.name}_{uploaded_file.size}"
-        
-        if "extracted_text_cache" not in st.session_state:
-            st.session_state.extracted_text_cache = {}
+        if uploaded_file.size > 10 * 1024 * 1024:
+            st.error("The uploaded file is too large. Please upload a PDF under 10MB.")
+        else:
+            file_key = f"analyze_{uploaded_file.name}_{uploaded_file.size}"
             
-        if file_key not in st.session_state.extracted_text_cache:
-            with st.spinner("Reading your resume..."):
-                resume_text = extract_text_from_pdf(uploaded_file)
-                st.session_state.extracted_text_cache[file_key] = resume_text
-        else:
-            resume_text = st.session_state.extracted_text_cache[file_key]
-
-        if resume_text.strip() == "":
-            st.error("Couldn't extract text from this PDF. Try a different file (avoid scanned/image-only PDFs).")
-        else:
-            st.success("Resume text extracted successfully!")
-
-            # Check if we have already analyzed this resume to prevent duplicate API runs on page reruns
-            if "analyses_cache" not in st.session_state:
-                st.session_state.analyses_cache = {}
-
-            if file_key not in st.session_state.analyses_cache:
-                with st.spinner("Analyzing with AI... this may take a few seconds"):
-                    try:
-                        result = analyze_resume(resume_text)
-                        
-                        # Save the analysis result to database
-                        save_analysis(uploaded_file.name, resume_text, result)
-                        
-                        st.session_state.analyses_cache[file_key] = result
-                    except Exception as e:
-                        st.error(f"Something went wrong: {e}")
-                        result = None
+            if "extracted_text_cache" not in st.session_state:
+                st.session_state.extracted_text_cache = {}
+                
+            if file_key not in st.session_state.extracted_text_cache:
+                with st.spinner("🔍 Reading your resume..."):
+                    resume_text = extract_text_from_pdf(uploaded_file)
+                    st.session_state.extracted_text_cache[file_key] = resume_text
             else:
-                result = st.session_state.analyses_cache[file_key]
+                resume_text = st.session_state.extracted_text_cache[file_key]
 
-            if result:
-                st.subheader("📊 Analysis Result")
-                st.markdown(result)
+            if resume_text is None or resume_text.strip() == "":
+                st.error("We couldn't read this PDF. Please try a different file or make sure it's not a scanned image.")
+            else:
+                st.success("Resume text extracted successfully!")
+
+                # Check if we have already analyzed this resume to prevent duplicate API runs on page reruns
+                if "analyses_cache" not in st.session_state:
+                    st.session_state.analyses_cache = {}
+
+                if file_key not in st.session_state.analyses_cache:
+                    with st.spinner("🤖 Consulting our AI career experts... Almost there!"):
+                        try:
+                            result = analyze_resume(resume_text)
+                            if result:
+                                # Save the analysis result to database
+                                save_analysis(uploaded_file.name, resume_text, result)
+                                st.session_state.analyses_cache[file_key] = result
+                            else:
+                                st.error("Something went wrong while analyzing. Please try again in a moment.")
+                        except Exception as e:
+                            st.error("Something went wrong while analyzing. Please try again in a moment.")
+                            result = None
+                else:
+                    result = st.session_state.analyses_cache[file_key]
+
+                if result:
+                    st.subheader("📊 Analysis Result")
+                    st.markdown(result)
     else:
         st.info("Upload a PDF resume above to get started.")
 
 
 # Tab 2: Analysis History
 with tab2:
-    st.write("View and manage your past resume analyses.")
+    st.subheader("📜 Saved Analyses")
+    st.write("View and manage your past resume analyses stored in your local database.")
+    st.divider()
     
     # Retrieve records from the database
     analyses = get_all_analyses()
@@ -133,6 +161,7 @@ with tab2:
                 with st.expander("🔍 View Original Resume Text", expanded=False):
                     st.text(row['resume_text'])
                 
+                st.divider()
                 # Delete button
                 if st.button("Delete this analysis", key=f"del_{row['id']}"):
                     delete_analysis(row['id'])
@@ -143,32 +172,41 @@ with tab2:
 
 # Tab 3: Job Application Assistant
 with tab3:
-    st.write("Upload a resume and paste a job description to run a 4-step AI agent process that helps you apply.")
+    st.subheader("🤖 Job Application Assistant")
+    st.write("Run a 4-step AI agent process that helps you align your resume to a job description, write a tailored cover letter, and refine your resume bullets.")
+    st.divider()
     
-    # Input field for Job Description
-    job_desc = st.text_area("Paste Job Description:", height=200, placeholder="Paste the job description from the job posting...")
+    col1, col2 = st.columns([1, 1], gap="medium")
     
-    # File uploader for Resume (reusing pdf text extractor)
-    assistant_file = st.file_uploader("Upload your resume (PDF only)", type=["pdf"], key="assistant_resume_uploader")
-    
-    assistant_resume_text = ""
-    if assistant_file is not None:
-        file_key = f"assistant_{assistant_file.name}_{assistant_file.size}"
+    with col1:
+        st.subheader("📋 Job Description")
+        job_desc = st.text_area("Paste the job description from the job posting:", height=250, placeholder="Paste job description here...")
         
-        if "extracted_text_cache" not in st.session_state:
-            st.session_state.extracted_text_cache = {}
-            
-        if file_key not in st.session_state.extracted_text_cache:
-            with st.spinner("Reading your resume..."):
-                assistant_resume_text = extract_text_from_pdf(assistant_file)
-                st.session_state.extracted_text_cache[file_key] = assistant_resume_text
-        else:
-            assistant_resume_text = st.session_state.extracted_text_cache[file_key]
-            
-        if assistant_resume_text.strip() == "":
-            st.error("Couldn't extract text from this PDF. Try a different file.")
-        else:
-            st.success("Resume text extracted successfully!")
+    with col2:
+        st.subheader("📤 Resume")
+        assistant_file = st.file_uploader("Upload your resume (PDF only)", type=["pdf"], key="assistant_resume_uploader")
+        
+        assistant_resume_text = ""
+        if assistant_file is not None:
+            if assistant_file.size > 10 * 1024 * 1024:
+                st.error("The uploaded file is too large. Please upload a PDF under 10MB.")
+            else:
+                file_key = f"assistant_{assistant_file.name}_{assistant_file.size}"
+                
+                if "extracted_text_cache" not in st.session_state:
+                    st.session_state.extracted_text_cache = {}
+                    
+                if file_key not in st.session_state.extracted_text_cache:
+                    with st.spinner("🔍 Reading your resume..."):
+                        assistant_resume_text = extract_text_from_pdf(assistant_file)
+                        st.session_state.extracted_text_cache[file_key] = assistant_resume_text
+                else:
+                    assistant_resume_text = st.session_state.extracted_text_cache[file_key]
+                    
+                if assistant_resume_text is None or assistant_resume_text.strip() == "":
+                    st.error("We couldn't read this PDF. Please try a different file or make sure it's not a scanned image.")
+                else:
+                    st.success("Resume text extracted successfully!")
 
     # Set up session state for storing assistant analysis results so they persist across reruns
     if "assistant_results" not in st.session_state:
@@ -177,7 +215,14 @@ with tab3:
     # Disable the assistant button if the necessary inputs are not provided
     btn_disabled = not (job_desc.strip() and assistant_resume_text.strip())
 
-    if st.button("Run Application Assistant", key="run_assistant_btn", disabled=btn_disabled):
+    st.divider()
+    
+    # Elegant centered button layout
+    btn_col1, btn_col2, btn_col3 = st.columns([1, 1, 1])
+    with btn_col2:
+        run_btn = st.button("🚀 Run Application Assistant", key="run_assistant_btn", disabled=btn_disabled, use_container_width=True)
+
+    if run_btn:
         # Reset the results in state while running
         st.session_state.assistant_results = None
         
@@ -192,7 +237,7 @@ with tab3:
             st.session_state.assistant_results = results
             st.success("Job Application Assistant completed all steps successfully!")
         except Exception as e:
-            st.error(f"Something went wrong during agent execution: {e}")
+            st.error("Something went wrong while analyzing. Please try again in a moment.")
 
     # Display results when they are available in session state
     if st.session_state.assistant_results is not None:
