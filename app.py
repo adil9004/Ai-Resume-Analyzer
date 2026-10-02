@@ -1,10 +1,14 @@
+# Resume Analyzer - built with Cline + FreeLLMAPI
+
 import streamlit as st
 import pdfplumber
 import os
+import time
 from dotenv import load_dotenv
 from google import genai
 from database import init_db, save_analysis, get_all_analyses, delete_analysis
 from agent import run_agent_steps
+from qa_chatbot import ask_document_question
 
 # Load environment variables and initialize database
 load_dotenv()
@@ -17,7 +21,7 @@ st.title("📄 AI Resume Analyzer")
 st.markdown("##### Welcome! This friendly tool uses AI to analyze your resume, highlight your strengths, suggest improvements, and help you tailor your application for your dream job.")
 
 # Create tabs for navigation
-tab1, tab2, tab3 = st.tabs(["🔍 Analyze Resume", "📜 Analysis History", "🤖 Job Application Assistant"])
+tab1, tab2, tab3, tab4 = st.tabs(["🔍 Analyze Resume", "📜 Analysis History", "🤖 Job Application Assistant", "💬 Document Q&A Chatbot"] )
 
 def extract_text_from_pdf(file):
     """Reads a PDF file and pulls out all the text from every page."""
@@ -256,3 +260,86 @@ with tab3:
             
         with st.expander("✍️ Step 4: Suggested Resume Bullet-Point Edits", expanded=True):
             st.markdown(res.get("step4", ""))
+
+
+# Tab 4: Document Q&A Chatbot
+with tab4:
+    st.subheader("💬 Document Q&A Chatbot")
+    st.write("Upload a document to chat with it.")
+    
+    qa_file = st.file_uploader("Upload a document (PDF)", type=["pdf"], key="qa_uploader")
+    
+    qa_document_text = ""
+    if qa_file is not None:
+        if qa_file.size > 10 * 1024 * 1024:
+            st.error("The uploaded file is too large. Please upload a PDF under 10MB.")
+        else:
+            file_key = f"qa_{qa_file.name}_{qa_file.size}"
+            
+            if "extracted_text_cache" not in st.session_state:
+                st.session_state.extracted_text_cache = {}
+                
+            if file_key not in st.session_state.extracted_text_cache:
+                with st.spinner("🔍 Reading your document..."):
+                    qa_document_text = extract_text_from_pdf(qa_file)
+                    st.session_state.extracted_text_cache[file_key] = qa_document_text
+            else:
+                qa_document_text = st.session_state.extracted_text_cache[file_key]
+                
+            if qa_document_text is None or qa_document_text.strip() == "":
+                st.error("We couldn't read this PDF. Please try a different file or make sure it's not a scanned image.")
+            else:
+                st.success("Document text extracted successfully!")
+                
+                # Initialize chat history
+                if "qa_messages" not in st.session_state:
+                    st.session_state.qa_messages = []
+                
+                # Render the message history inside an st.container() above st.chat_input,
+                # so the input box always stays below the conversation.
+                chat_container = st.container()
+                
+                with chat_container:
+                    # Display chat history
+                    for message in st.session_state.qa_messages:
+                        with st.chat_message(message["role"]):
+                            st.markdown(message["content"])
+                
+                # Chat input
+                if prompt := st.chat_input("Ask a question about your document..."):
+                    st.session_state.qa_messages.append({"role": "user", "content": prompt})
+                    with chat_container:
+                        with st.chat_message("user"):
+                            st.markdown(prompt)
+                        
+                        with st.chat_message("assistant"):
+                            with st.spinner("Thinking..."):
+                                max_retries = 2
+                                response = None
+                                error_to_show = None
+                                
+                                for attempt in range(max_retries + 1):
+                                    try:
+                                        response = ask_document_question(client, qa_document_text, prompt, st.session_state.qa_messages[:-1])
+                                        break
+                                    except Exception as e:
+                                        err_str = str(e)
+                                        if e.__cause__:
+                                            err_str += " " + str(e.__cause__)
+                                        
+                                        is_retryable = "503" in err_str or "429" in err_str
+                                        if is_retryable and attempt < max_retries:
+                                            time.sleep(2)
+                                            continue
+                                        else:
+                                            error_to_show = e
+                                            break
+                                
+                                if response is not None:
+                                    st.markdown(response)
+                                    st.session_state.qa_messages.append({"role": "assistant", "content": response})
+                                else:
+                                    friendly_error = "⚠️ I'm sorry, but I'm having trouble connecting to the service right now. Please try asking your question again in a moment."
+                                    st.error(friendly_error)
+                                    st.session_state.qa_messages.append({"role": "assistant", "content": friendly_error})
+
